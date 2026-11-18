@@ -11,14 +11,20 @@ import {comentarService} from "../services/comentarService.js";
 
 export const wishas = () => {
     const wishasContainer = document.querySelector('.wishas');
-    const [_, form] = wishasContainer.children[2].children;
-    const [peopleComentar, ___, containerComentar] = wishasContainer.children[3].children;
-    const buttonForm = form.children[6];
+    
+    // 1. Ambil form secara spesifik agar tidak terpengaruh pergeseran struktur HTML
+    const form = wishasContainer.querySelector('form');
+    const buttonForm = form ? form.querySelector('button[type="submit"]') : null;
+
+    // 2. Ambil elemen-elemen komentar menggunakan querySelector spesifik (Kelas/Atribut)
+    const peopleComentar = wishasContainer.querySelector('.wishas-count') || wishasContainer.querySelector('div:nth-of-type(3) p, div:nth-of-type(2) p');
+    const containerComentar = wishasContainer.querySelector('ul[aria-label="list comentar"]');
     const pageNumber = wishasContainer.querySelector('.page-number');
-    const [prevButton, nextButton] = wishasContainer.querySelectorAll('.button-grup button');
+    const prevButton = wishasContainer.querySelector('.button-grup button:first-child');
+    const nextButton = wishasContainer.querySelector('.button-grup button:last-child');
 
     const listItemBank = (data) => (
-        `  <figure data-aos="zoom-in" data-aos-duration="1000">
+        ` <figure data-aos="zoom-in" data-aos-duration="1000">
                 <img src=${data.icon} alt="bank icon animation">
                 <figcaption>No. Rekening ${data.rekening.slice(0, 4)}xxxx <br>A.n ${data.name}</figcaption>
                 <button data-rekening=${data.rekening} aria-label="copy rekening">Salin No. Rekening</button>
@@ -26,26 +32,28 @@ export const wishas = () => {
     );
 
     const initialBank = () => {
-        const wishasBank = wishasContainer.children[1];
-        const [_, __, containerBank] = wishasBank.children;
+        // Cari container bank secara aman
+        const containerBank = wishasContainer.querySelector('div:first-of-type div') || wishasContainer.children[0].querySelector('div:last-child');
 
-        renderElement(data.bank, containerBank, listItemBank);
+        if (containerBank && data.bank) {
+            renderElement(data.bank, containerBank, listItemBank);
 
-        containerBank.querySelectorAll('button').forEach((button) => {
-            button.addEventListener('click', async (e) => {
-                const rekening = e.target.dataset.rekening;
-                try {
-                    await navigator.clipboard.writeText(rekening);
-                    button.textContent = 'Berhasil menyalin';
-                } catch (error) {
-                    console.log(`Error : ${error.message}`);
-                } finally {
-                    setTimeout(() => {
-                        button.textContent = 'Salin No. Rekening';
-                    }, 2000);
-                }
+            containerBank.querySelectorAll('button').forEach((button) => {
+                button.addEventListener('click', async (e) => {
+                    const rekening = e.target.dataset.rekening;
+                    try {
+                        await navigator.clipboard.writeText(rekening);
+                        button.textContent = 'Berhasil menyalin';
+                    } catch (error) {
+                        console.log(`Error : ${error.message}`);
+                    } finally {
+                        setTimeout(() => {
+                            button.textContent = 'Salin No. Rekening';
+                        }, 2000);
+                    }
+                });
             });
-        });
+        }
     };
 
     const listItemComentar = (data) => {
@@ -73,109 +81,125 @@ export const wishas = () => {
                  </li>`;
     };
 
-    let lengthComentar;
-
-    const initialComentar = async () => {
-        containerComentar.innerHTML = `<h1 style="font-size: 1rem; margin: auto">Loading...</h1>`;
-        peopleComentar.textContent = '...';
-        pageNumber.textContent = '..';
-
-        try {
-            const response = await comentarService.getComentar();
-            const {comentar} = response;
-
-            lengthComentar = comentar.length;
-            comentar.reverse();
-
-            if (comentar.length > 0) {
-                peopleComentar.textContent = `${comentar.length} Orang telah mengucapkan`;
-            } else {
-                peopleComentar.textContent = `Belum ada yang mengucapkan`;
-            }
-
-            pageNumber.textContent = '1';
-            renderElement(comentar.slice(startIndex, endIndex), containerComentar, listItemComentar);
-        } catch (error) {
-            return `Error : ${error.message}`;
-        }
-    };
-
-    form.addEventListener('submit', async (e) => {
-        e.preventDefault();
-        buttonForm.textContent = 'Loading...';
-
-        const comentar = {
-            id: generateRandomId(),
-            name: e.target.name.value,
-            status: e.target.status.value === 'y' ? 'Hadir' : 'Tidak Hadir',
-            message: e.target.message.value,
-            date: getCurrentDateTime(),
-            color: generateRandomColor(),
-        };
-
-        try {
-            const response = await comentarService.getComentar();
-
-            await comentarService.addComentar(comentar);
-
-            lengthComentar = response.comentar.length;
-
-            peopleComentar.textContent = `${++response.comentar.length} Orang telah mengucapkan`;
-            containerComentar.insertAdjacentHTML('afterbegin', listItemComentar(comentar));
-        } catch (error) {
-            return `Error : ${error.message}`;
-        } finally {
-            buttonForm.textContent = 'Kirim';
-            form.reset();
-        }
-    });
-
-    // click prev & next
+    let lengthComentar = 0;
     let currentPage = 1;
     let itemsPerPage = 4;
     let startIndex = 0;
     let endIndex = itemsPerPage;
 
-    const updatePageContent = async () => {
-        containerComentar.innerHTML = '<h1 style="font-size: 1rem; margin: auto">Loading...</h1>';
-        pageNumber.textContent = '..';
-        prevButton.disabled = true;
-        nextButton.disabled = true;
+    const initialComentar = async () => {
+        if (!containerComentar) return;
+        containerComentar.innerHTML = `<h1 style="font-size: 1rem; margin: auto">Loading...</h1>`;
+        if (pageNumber) pageNumber.textContent = '..';
 
         try {
             const response = await comentarService.getComentar();
-            const {comentar} = response;
+            const {comentar} = response || {};
 
-            comentar.reverse();
+            if (!comentar) {
+                containerComentar.innerHTML = `<h1 style="font-size: 1rem; margin: auto">Gagal memuat komentar</h1>`;
+                return;
+            }
 
-            renderElement(comentar.slice(startIndex, endIndex), containerComentar, listItemComentar);
-            pageNumber.textContent = currentPage.toString();
+            lengthComentar = comentar.length;
+            const reversedComentar = [...comentar].reverse();
+
+            if (peopleComentar) {
+                peopleComentar.textContent = comentar.length > 0 
+                    ? `${comentar.length} Orang telah mengucapkan` 
+                    : `Belum ada yang mengucapkan`;
+            }
+
+            if (pageNumber) pageNumber.textContent = currentPage.toString();
+            renderElement(reversedComentar.slice(startIndex, endIndex), containerComentar, listItemComentar);
+        } catch (error) {
+            console.log(`Error : ${error.message}`);
+            if (containerComentar) {
+                containerComentar.innerHTML = `<h1 style="font-size: 1rem; margin: auto">Terjadi kesalahan</h1>`;
+            }
+        }
+    };
+
+    if (form) {
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault(); // Mencegah reload dan parameter GET di URL
+            
+            if (buttonForm) buttonForm.textContent = 'Loading...';
+
+            const comentar = {
+                id: generateRandomId(),
+                name: e.target.name.value,
+                status: e.target.status.value === 'y' ? 'Hadir' : 'Tidak Hadir',
+                message: e.target.message.value,
+                date: getCurrentDateTime(),
+                color: generateRandomColor(),
+            };
+
+            try {
+                // Kirim data ke Google Sheets
+                await comentarService.addComentar(comentar);
+                
+                // Reset halaman ke awal & muat ulang daftar komentar terbaru
+                currentPage = 1;
+                startIndex = 0;
+                endIndex = itemsPerPage;
+                await initialComentar();
+                
+                form.reset();
+            } catch (error) {
+                console.error(`Error : ${error.message}`);
+            } finally {
+                if (buttonForm) buttonForm.textContent = 'Kirim';
+            }
+        });
+    }
+
+    const updatePageContent = async () => {
+        if (!containerComentar) return;
+        containerComentar.innerHTML = '<h1 style="font-size: 1rem; margin: auto">Loading...</h1>';
+        if (pageNumber) pageNumber.textContent = '..';
+        if (prevButton) prevButton.disabled = true;
+        if (nextButton) nextButton.disabled = true;
+
+        try {
+            const response = await comentarService.getComentar();
+            const {comentar} = response || {};
+            if (!comentar) return;
+
+            const reversedComentar = [...comentar].reverse();
+
+            renderElement(reversedComentar.slice(startIndex, endIndex), containerComentar, listItemComentar);
+            if (pageNumber) pageNumber.textContent = currentPage.toString();
         } catch (error) {
             console.log(error);
         } finally {
-            prevButton.disabled = false;
-            nextButton.disabled = false;
+            if (prevButton) prevButton.disabled = false;
+            if (nextButton) nextButton.disabled = false;
         }
+    };
+
+    if (nextButton) {
+        nextButton.addEventListener('click', async () => {
+            if (endIndex < lengthComentar) {
+                currentPage++;
+                startIndex = (currentPage - 1) * itemsPerPage;
+                endIndex = startIndex + itemsPerPage;
+                await updatePageContent();
+            }
+        });
     }
 
-    nextButton.addEventListener('click', async () => {
-        if (endIndex <= lengthComentar) {
-            currentPage++;
-            startIndex = (currentPage - 1) * itemsPerPage;
-            endIndex = startIndex + itemsPerPage;
-            await updatePageContent();
-        }
-    });
+    if (prevButton) {
+        prevButton.addEventListener('click', async () => {
+            if (currentPage > 1) {
+                currentPage--;
+                startIndex = (currentPage - 1) * itemsPerPage;
+                endIndex = startIndex + itemsPerPage;
+                await updatePageContent();
+            }
+        });
+    }
 
-    prevButton.addEventListener('click', async () => {
-        if (currentPage > 1) {
-            currentPage--;
-            startIndex = (currentPage - 1) * itemsPerPage;
-            endIndex = startIndex + itemsPerPage;
-            await updatePageContent();
-        }
-    });
-
-    initialComentar().then();
+    initialComentar();
     initialBank();
 };
